@@ -40,38 +40,39 @@ Ambos frontends llaman al **mismo** API Gateway y al **mismo** backend. Lo únic
 
 **Qué estamos haciendo y por qué:** antes de tocar AWS necesitamos algo real que proteger. El inventario de zapatillas es la excusa — la lógica de negocio es mínima a propósito, porque el foco de esta actividad es API Gateway y Cognito, no Spring ni React en sí.
 
-### 0.1 — Backend Spring Boot (`backend-zapatillas`)
+### 0.1 — Backend Spring Boot (`backend-shoes-app`) — ya generado
 
-1. Ve a [start.spring.io](https://start.spring.io).
-2. Configura: **Project:** Maven · **Language:** Java · **Spring Boot:** la versión estable más reciente · **Group:** `cl.duoc` · **Artifact:** `backend-zapatillas` · **Packaging:** Jar · **Java:** 17.
-3. En **Dependencies**, agrega solo **Spring Web**.
-4. **Generate** → descarga y descomprime el proyecto.
-5. Abre el proyecto y crea una clase controladora `ZapatillaController` con dos endpoints sobre una lista en memoria:
-   - `GET /api/zapatillas` → devuelve la lista completa (catálogo).
-   - `POST /api/zapatillas` → recibe un JSON (`{"modelo": "...", "talla": ..., "stock": ...}`) y lo agrega a la lista.
-6. Corre el proyecto (`./mvnw spring-boot:run`) y prueba ambos endpoints en Postman contra `http://localhost:8080/api/zapatillas` — sin nada de seguridad todavía.
+El backend no lo construyes tú — te lo entrego listo (`backend-shoes-app.zip`), porque no es el foco de esta actividad. Trae:
 
-**Checkpoint:** `GET` te devuelve un arreglo (puede estar vacío), `POST` agrega un elemento y el siguiente `GET` lo muestra.
+- CRUD completo sobre `/api/zapatillas` (`GET`, `GET /{id}`, `POST`, `PUT /{id}`, `DELETE /{id}`), en memoria (sin base de datos).
+- 3 zapatillas de ejemplo precargadas al arrancar.
+- Manejo de errores (404 si el id no existe, 400 si faltan campos).
+- CORS habilitado para `localhost:5173` y `localhost:5174` (los dos frontends).
+- Sin seguridad todavía — eso se agrega en el Contexto de integración final, del lado de API Gateway.
 
-### 0.2 — Frontend `zapatillas-tienda` (clientes)
+**Pasos:**
 
-```bash
-npm create vite@latest zapatillas-tienda -- --template react-ts
-cd zapatillas-tienda
-npm install
-```
+1. Descomprime `backend-shoes-app.zip`.
+2. Dentro de la carpeta: `mvn spring-boot:run`.
+3. Prueba en Postman contra `http://localhost:8080/api/zapatillas` (o con `curl` — ver el `README.md` del proyecto).
 
-Una sola pantalla: al cargar, llama a `GET http://localhost:8080/api/zapatillas` y lista los resultados. Todavía sin login.
+**Checkpoint:** `GET` te devuelve las 3 zapatillas de ejemplo. Un `POST` agrega una nueva y aparece en el siguiente `GET`.
 
-### 0.3 — Frontend `zapatillas-admin` (personal)
+**Nota de verificación:** este proyecto se escribió y se revisó a mano siguiendo las convenciones estándar de Spring Boot 3.3, pero no se pudo compilar dentro de este entorno (Maven Central está bloqueado desde acá). Tu `mvn spring-boot:run` del paso 2 es la primera prueba real — si algo no compila, pégame el error y lo corrijo de inmediato.
 
-```bash
-npm create vite@latest zapatillas-admin -- --template react-ts
-cd zapatillas-admin
-npm install
-```
+**Si `mvn` no te aparece como comando:** instálalo con `brew install maven` (o si no tienes Homebrew, instálalo primero desde [brew.sh](https://brew.sh)). Alternativa sin terminal: abre la carpeta como proyecto en IntelliJ IDEA Community o VS Code con la extensión de Java — el IDE trae su propio Maven, solo dale Run a `BackendShoesAppApplication.java`.
 
-Un formulario simple (modelo, talla, stock) que hace `POST http://localhost:8080/api/zapatillas`. Todavía sin login.
+### 0.2 — Frontend `zapatillas-tienda` (clientes) — ya generado
+
+Igual que el backend, este frontend también viene listo (`zapatillas-tienda.zip`), ya compilado y verificado. Descomprime, `npm install`, copia `.env.example` a `.env` y completa con los datos del Contexto Cognito externo. `npm run dev` → queda en `http://localhost:5173`.
+
+Pantalla: botón de login (Amplify) y, ya logueado, el catálogo en tarjetas pidiendo `GET /api/zapatillas`.
+
+### 0.3 — Frontend `zapatillas-admin` (personal) — ya generado
+
+Mismo caso: `zapatillas-admin.zip` ya generado y verificado. Descomprime, `npm install`, `.env` con los datos del Contexto Cognito interno. `npm run dev` → queda en `http://localhost:5174`.
+
+Pantalla: botón de login y, ya logueado, un formulario (modelo, marca, talla, stock) que hace `POST /api/zapatillas`.
 
 **Por qué dos proyectos React y no uno:** AWS Amplify configura **un** Cognito User Pool por app (`Amplify.configure()` recibe una sola configuración). Como vamos a tener dos identidades distintas, separar los proyectos evita pelear con Amplify — y de paso refleja cómo se separa esto en un sistema real (portal de administración vs. tienda pública casi nunca son la misma aplicación).
 
@@ -91,15 +92,24 @@ ngrok http 8080
 
 Ngrok te entrega una URL pública, algo como `https://a1b2-c3d4.ngrok-free.app`. Esa es la URL que API Gateway va a usar como destino. **Anótala** — cambia cada vez que reinicies ngrok (en el plan gratis).
 
+**Antes de la primera vez**, ngrok te va a pedir cuenta y authtoken (una sola vez):
+
+1. Cuenta gratis: https://dashboard.ngrok.com/signup
+2. Copia tu authtoken: https://dashboard.ngrok.com/get-started/your-authtoken
+3. `ngrok config add-authtoken TU_TOKEN_AQUI`
+
+**Si abres esa URL directo en el navegador**, primero vas a ver una pantalla de advertencia de ngrok ("You are about to visit...") — clic en "Visit Site" para pasar. Es normal, no es un error, y no le aparece a API Gateway cuando la llama (solo se la muestra a navegadores). En Postman, si te aparece, agrega el header `ngrok-skip-browser-warning: true`.
+
 ### 1.2 — Crear la HTTP API
 
 1. Consola AWS → busca "API Gateway" → **Create API** → tarjeta **HTTP API** → **Build**.
 2. **API name:** `api-zapatillas` → **Next**.
-3. En **Configure routes**, agrega dos rutas (puedes editarlas después si prefieres saltarte este paso):
-   - `GET /api/zapatillas`
-   - `POST /api/zapatillas`
-     Para cada una, en **Integration target** crea una integración nueva tipo **HTTP**, apuntando a tu URL de ngrok + la misma ruta (ej. `https://a1b2-c3d4.ngrok-free.app/api/zapatillas`).
+3. En **Configure routes**, la consola te pide crear la integración al mismo tiempo que cada ruta (no se puede agregar una ruta sin integración) — agrega las dos:
+   - **Ruta 1:** Método `GET` · Path `/api/zapatillas` · integración nueva tipo **HTTP**, método `GET`, URL = tu URL de ngrok + `/api/zapatillas` (ej. `https://a1b2-c3d4.ngrok-free.app/api/zapatillas`).
+   - **Ruta 2:** Método `POST` · Path `/api/zapatillas` · integración nueva tipo **HTTP**, método `POST`, misma URL de ngrok + `/api/zapatillas`.
 4. **Next** → deja el stage por defecto (`$default`, con auto-deploy activado) → **Create**.
+
+**Por qué dos rutas con el mismo path:** en API Gateway (y en REST en general) una ruta es la combinación **método + path**, no solo el path. `GET /api/zapatillas` y `POST /api/zapatillas` son dos rutas distintas aunque el texto se vea igual — por eso más adelante cada una puede tener su propio Authorizer (Cognito externo para `GET`, interno para `POST`), sin necesitar nombres de ruta distintos.
 
 ### 1.3 — Probar sin autenticación (todavía)
 
