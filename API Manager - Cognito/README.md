@@ -1054,10 +1054,6 @@ Repite exactamente el procedimiento del Contexto anterior (2.1), con estos valor
 - **Name your application:** `zapatillas-admin-app`.
 - **Return URL:** `http://localhost:5174/`.
 
-### 3.2 — La misma pantalla "Set up resources"
-
-Igual que en 2.2 — puedes ignorarla o elegir **Java** como referencia.
-
 ### 3.3 — User Pool ID, App Client ID y dominio
 
 Mismo procedimiento que 2.3 y 2.4, para este pool. Ej. dominio `zapatillas-admin-2026.auth.<region>.amazoncognito.com`.
