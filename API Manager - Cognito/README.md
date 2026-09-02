@@ -1018,10 +1018,6 @@ Al terminar, Cognito te lleva a esta pantalla:
 - **"Check out your sign-in page"** → botón **View login page**: abre la pantalla de login real (Managed Login) para que la veas funcionando ahora mismo, con un usuario de prueba.
 - **"Build authentication components for your application" → Quick setup guide** → te pregunta **"What's the development platform for your web application?"**, con opciones **Golang / Java / NodeJS / Python**.
 
-**Esto puede parecer que pide el lenguaje de tu frontend, pero no es así:** esas 4 opciones son lenguajes de **backend** — esta sección genera código de ejemplo para validar tokens de Cognito **desde un servidor**, no desde React. No la necesitas: el backend Spring Boot valida tokens de Cognito de forma nativa con Spring Security, y el frontend usa Amplify, no el código de ejemplo de esta pantalla.
-
-**Qué hacer con esta pantalla:** puedes ignorarla y salir (no hay que completarla ni elegir ninguna opción), o si tienes curiosidad, elige **Java** — igual coincide con Spring Boot y muestra cómo se ve un validador de JWT hecho a mano, útil como referencia, pero no se sigue al pie de la letra en esta actividad.
-
 ### 2.3 — Dónde sacar el User Pool ID y el App Client ID
 
 - **User Pool ID:** tu User Pool → pestaña **"Overview"** → campo **"User pool ID"** (formato `us-east-1_XXXXXXXXX`).
