@@ -1,8 +1,6 @@
 # Guía de Actividad — Inventario de Zapatillas: API Gateway + Cognito (Interno y Externo)
 
 > **Qué es esto:** una actividad con backend y frontend propios (no un tercero como PokeAPI). Construyes un mini sistema de inventario de zapatillas con **Spring Boot** (backend) y **dos apps React** (una para clientes, una para personal), protegido por **un solo AWS API Gateway** y **dos Cognito User Pools** separados.
->
-> Diagrama de referencia (plan aprobado): https://claude.ai/code/artifact/a2d1d301-6ebb-42cd-b5a0-1b31fb58b01a
 
 ## El flujo completo, de un vistazo
 
@@ -28,6 +26,7 @@ flowchart LR
 Ambos frontends llaman al **mismo** API Gateway y al **mismo** backend. Lo único que cambia entre "cliente" y "personal" es qué Cognito User Pool emitió el token, y qué Authorizer lo exige en cada ruta.
 
 **Antes de empezar — checklist:**
+
 - [ ] Acceso a la consola de AWS (Academy Learner Lab u otra) con permisos sobre Cognito y API Gateway.
 - [ ] Node.js y npm instalados (para los dos proyectos React).
 - [ ] Java 17+ y Maven (o el wrapper `./mvnw`) para el proyecto Spring Boot.
@@ -61,6 +60,7 @@ npm create vite@latest zapatillas-tienda -- --template react-ts
 cd zapatillas-tienda
 npm install
 ```
+
 Una sola pantalla: al cargar, llama a `GET http://localhost:8080/api/zapatillas` y lista los resultados. Todavía sin login.
 
 ### 0.3 — Frontend `zapatillas-admin` (personal)
@@ -70,6 +70,7 @@ npm create vite@latest zapatillas-admin -- --template react-ts
 cd zapatillas-admin
 npm install
 ```
+
 Un formulario simple (modelo, talla, stock) que hace `POST http://localhost:8080/api/zapatillas`. Todavía sin login.
 
 **Por qué dos proyectos React y no uno:** AWS Amplify configura **un** Cognito User Pool por app (`Amplify.configure()` recibe una sola configuración). Como vamos a tener dos identidades distintas, separar los proyectos evita pelear con Amplify — y de paso refleja cómo se separa esto en un sistema real (portal de administración vs. tienda pública casi nunca son la misma aplicación).
@@ -87,6 +88,7 @@ API Gateway corre en la nube de AWS — no puede llamar a `http://localhost:8080
 ```bash
 ngrok http 8080
 ```
+
 Ngrok te entrega una URL pública, algo como `https://a1b2-c3d4.ngrok-free.app`. Esa es la URL que API Gateway va a usar como destino. **Anótala** — cambia cada vez que reinicies ngrok (en el plan gratis).
 
 ### 1.2 — Crear la HTTP API
@@ -96,7 +98,7 @@ Ngrok te entrega una URL pública, algo como `https://a1b2-c3d4.ngrok-free.app`.
 3. En **Configure routes**, agrega dos rutas (puedes editarlas después si prefieres saltarte este paso):
    - `GET /api/zapatillas`
    - `POST /api/zapatillas`
-   Para cada una, en **Integration target** crea una integración nueva tipo **HTTP**, apuntando a tu URL de ngrok + la misma ruta (ej. `https://a1b2-c3d4.ngrok-free.app/api/zapatillas`).
+     Para cada una, en **Integration target** crea una integración nueva tipo **HTTP**, apuntando a tu URL de ngrok + la misma ruta (ej. `https://a1b2-c3d4.ngrok-free.app/api/zapatillas`).
 4. **Next** → deja el stage por defecto (`$default`, con auto-deploy activado) → **Create**.
 
 ### 1.3 — Probar sin autenticación (todavía)
@@ -169,6 +171,7 @@ Al terminar, Cognito te lleva a esta pantalla — la misma que te generó dudas:
 ### 3.1 — Crear el User Pool
 
 Repite exactamente el procedimiento del Contexto anterior (2.1), con estos valores distintos:
+
 - **Name your application:** `zapatillas-admin-app`.
 - **Return URL:** `http://localhost:5174/` (usa un puerto distinto al de `zapatillas-tienda` para poder correr ambos frontends a la vez — configúralo en el `vite.config.ts` de `zapatillas-admin` con `server: { port: 5174 }`).
 
@@ -200,7 +203,9 @@ Mismo procedimiento que 2.3 y 2.4, para este pool. Ej. dominio `zapatillas-admin
 cd zapatillas-tienda
 npm install aws-amplify
 ```
+
 `.env` en la raíz:
+
 ```
 VITE_COGNITO_USER_POOL_ID=<User Pool ID de 2.3>
 VITE_COGNITO_CLIENT_ID=<App Client ID de 2.3>
@@ -209,9 +214,11 @@ VITE_REDIRECT_SIGN_IN=http://localhost:5173/
 VITE_REDIRECT_SIGN_OUT=http://localhost:5173/
 VITE_API_URL=<Invoke URL de tu API Gateway>
 ```
+
 `src/main.tsx`, antes de renderizar `<App />`:
+
 ```tsx
-import { Amplify } from 'aws-amplify';
+import { Amplify } from "aws-amplify";
 
 Amplify.configure({
   Auth: {
@@ -221,29 +228,32 @@ Amplify.configure({
       loginWith: {
         oauth: {
           domain: import.meta.env.VITE_COGNITO_DOMAIN,
-          scopes: ['openid', 'email', 'profile', 'zapatillas-api/read'],
+          scopes: ["openid", "email", "profile", "zapatillas-api/read"],
           redirectSignIn: [import.meta.env.VITE_REDIRECT_SIGN_IN],
           redirectSignOut: [import.meta.env.VITE_REDIRECT_SIGN_OUT],
-          responseType: 'code'
-        }
-      }
-    }
-  }
+          responseType: "code",
+        },
+      },
+    },
+  },
 });
 ```
+
 `src/api.ts` — envuelve tus llamadas para que lleven el token:
+
 ```ts
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { fetchAuthSession } from "aws-amplify/auth";
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const session = await fetchAuthSession();
   const token = session.tokens?.accessToken?.toString();
   return fetch(`${import.meta.env.VITE_API_URL}${path}`, {
     ...options,
-    headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
 }
 ```
+
 Usa `signInWithRedirect()` / `signOut()` (de `aws-amplify/auth`) para los botones de login/logout, igual que en la guía 1.3.2.
 
 ### 4.2 — `zapatillas-admin` → pool interno
@@ -284,18 +294,19 @@ Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, 
 3. Vuelve a `zapatillas-tienda` y refresca — el par agregado por el admin debería aparecer en el catálogo del cliente (ambos hablan con el mismo backend).
 
 **Resultado esperado:**
+
 - Con token válido y scope correcto → `200 OK`.
 - Sin token → `401`.
 - Con token del pool equivocado (ej. token de cliente intentando `POST`) → `401`/`403`.
 
 ### Troubleshooting
 
-| Síntoma | Causa probable |
-|---|---|
+| Síntoma                                               | Causa probable                                                                                                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `401` siempre, aunque el token se ve válido en jwt.io | Issuer o Audience del Authorizer no coinciden exactamente con el pool/App Client correcto — revisa que no mezclaste el externo con el interno |
-| El cliente puede hacer `POST` | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo |
-| `403` con token y scope aparentemente correctos | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client |
-| API Gateway no llega al backend (502/504) | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo |
+| El cliente puede hacer `POST`                         | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo                                                        |
+| `403` con token y scope aparentemente correctos       | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client                                 |
+| API Gateway no llega al backend (502/504)             | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo                                       |
 
 ---
 
@@ -304,6 +315,7 @@ Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, 
 Terminaste con: dos identidades separadas (Cognito), un solo punto de entrada (API Gateway), un backend compartido (Spring Boot) que no sabe ni le importa por cuál puerta entró la petición — solo confía en que, si llegó, ya fue autorizada. Ese es exactamente el patrón de **defense in depth** visto en la clase de Arquitecturas Seguras.
 
 ## Enlaces oficiales
+
 - Getting started with user pools: https://docs.aws.amazon.com/cognito/latest/developerguide/getting-started-user-pools.html
 - Create a new application (flujo actual): https://docs.aws.amazon.com/cognito/latest/developerguide/getting-started-user-pools-application.html
 - Resource servers y scopes personalizados: https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-define-resource-servers.html
