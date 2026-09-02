@@ -1,6 +1,6 @@
 # Guía de Actividad — Inventario de Zapatillas: API Gateway + Cognito (Interno y Externo)
 
-> **Qué es esto:** una actividad con backend y frontend propios (no un tercero como PokeAPI). Construyes un mini sistema de inventario de zapatillas con **Spring Boot** (backend) y **dos apps React** (una para clientes, una para personal), protegido por **un solo AWS API Gateway** y **dos Cognito User Pools** separados.
+> **Qué es esto:** una actividad con backend y frontend propios (no un tercero como PokeAPI). Vas a construir un mini sistema de inventario de zapatillas con **Spring Boot** (backend) y **dos apps React** (una para clientes, una para personal), protegido por **un solo AWS API Gateway** y **dos Cognito User Pools** separados.
 
 ## El flujo completo, de un vistazo
 
@@ -28,51 +28,924 @@ Ambos frontends llaman al **mismo** API Gateway y al **mismo** backend. Lo únic
 **Antes de empezar — checklist:**
 
 - [ ] Acceso a la consola de AWS (Academy Learner Lab u otra) con permisos sobre Cognito y API Gateway.
-- [ ] Node.js y npm instalados (para los dos proyectos React).
-- [ ] Java 17+ y Maven (o el wrapper `./mvnw`) para el proyecto Spring Boot.
+- [ ] Node.js y npm instalados.
+- [ ] Java 17+ y Maven instalados (`java -version`, `mvn -version`).
 - [ ] Postman instalado.
-- [ ] Cuenta gratuita en [ngrok](https://ngrok.com) — la necesitas para que API Gateway pueda llamar a tu backend mientras corre en tu notebook (más detalles en el Contexto 2).
-- [ ] Un bloque de 90-120 minutos — son varias piezas, mejor sin interrupciones largas.
+- [ ] Cuenta gratuita en [ngrok](https://ngrok.com) — la necesitas para que API Gateway pueda llamar a tu backend mientras corre en tu notebook.
+- [ ] **Windows:** instala [Git for Windows](https://git-scm.com/downloads/win) y usa "Git Bash" como terminal para los comandos de esta guía — es la forma más simple de que todo funcione igual que en Mac/Linux. (Alternativa: PowerShell funciona para casi todo, pero algunos comandos de ejemplo con `curl` necesitan ajustes — se indica en el paso correspondiente.)
+- [ ] Un bloque de 2-3 horas — son varias piezas, mejor sin interrupciones largas.
 
 ---
 
-## Contexto 0 — Proyectos base (Spring Boot + 2 React)
+## Contexto 0 — Construir los proyectos base (Spring Boot + 2 React)
 
-**Qué estamos haciendo y por qué:** antes de tocar AWS necesitamos algo real que proteger. El inventario de zapatillas es la excusa — la lógica de negocio es mínima a propósito, porque el foco de esta actividad es API Gateway y Cognito, no Spring ni React en sí.
+**Qué estamos haciendo y por qué:** antes de tocar AWS necesitamos algo real que proteger. El inventario de zapatillas es la excusa — la lógica de negocio es intencionalmente simple, porque el foco de esta actividad es API Gateway y Cognito, no Spring ni React en profundidad.
 
-### 0.1 — Backend Spring Boot (`backend-shoes-app`) — ya generado
+### 0.1 — Backend Spring Boot (`backend-shoes-app`)
 
-El backend no lo construyes tú — te lo entrego listo (`backend-shoes-app.zip`), porque no es el foco de esta actividad. Trae:
+**Paso 1 — Crear el proyecto**
 
-- CRUD completo sobre `/api/zapatillas` (`GET`, `GET /{id}`, `POST`, `PUT /{id}`, `DELETE /{id}`), en memoria (sin base de datos).
-- 3 zapatillas de ejemplo precargadas al arrancar.
-- Manejo de errores (404 si el id no existe, 400 si faltan campos).
-- CORS habilitado para `localhost:5173` y `localhost:5174` (los dos frontends).
-- Sin seguridad todavía — eso se agrega en el Contexto de integración final, del lado de API Gateway.
+1. Ve a [start.spring.io](https://start.spring.io).
+2. Configura: **Project:** Maven · **Language:** Java · **Spring Boot:** la versión estable más reciente de la rama 3.3.x · **Group:** `cl.duoc` · **Artifact:** `backend-shoes-app` · **Packaging:** Jar · **Java:** 17.
+3. En **Dependencies**, agrega **Spring Web** y **Validation**.
+4. **Generate** → descarga y descomprime el proyecto.
 
-**Pasos:**
+**Si `mvn` no te aparece como comando:**
 
-1. Descomprime `backend-shoes-app.zip`.
-2. Dentro de la carpeta: `mvn spring-boot:run`.
-3. Prueba en Postman contra `http://localhost:8080/api/zapatillas` (o con `curl` — ver el `README.md` del proyecto).
+- **Mac:** instálalo con `brew install maven` (o instala Homebrew primero desde [brew.sh](https://brew.sh) si no lo tienes).
+- **Windows:** instálalo con `winget install Apache.Maven` (Windows 10/11 trae `winget` por defecto), o descárgalo manualmente desde [maven.apache.org](https://maven.apache.org/download.cgi) y agrégalo al `PATH`.
+- **Alternativa sin terminal, en cualquier sistema operativo:** abre la carpeta como proyecto en IntelliJ IDEA Community o VS Code con la extensión de Java — el IDE trae su propio Maven y le puedes dar "Run" directo al método `main`.
 
-**Checkpoint:** `GET` te devuelve las 3 zapatillas de ejemplo. Un `POST` agrega una nueva y aparece en el siguiente `GET`.
+**Paso 2 — El modelo de datos**
 
-**Nota de verificación:** este proyecto se escribió y se revisó a mano siguiendo las convenciones estándar de Spring Boot 3.3, pero no se pudo compilar dentro de este entorno (Maven Central está bloqueado desde acá). Tu `mvn spring-boot:run` del paso 2 es la primera prueba real — si algo no compila, pégame el error y lo corrijo de inmediato.
+Crea `src/main/java/cl/duoc/backendshoesapp/model/Zapatilla.java`:
 
-**Si `mvn` no te aparece como comando:** instálalo con `brew install maven` (o si no tienes Homebrew, instálalo primero desde [brew.sh](https://brew.sh)). Alternativa sin terminal: abre la carpeta como proyecto en IntelliJ IDEA Community o VS Code con la extensión de Java — el IDE trae su propio Maven, solo dale Run a `BackendShoesAppApplication.java`.
+```java
+package cl.duoc.backendshoesapp.model;
 
-### 0.2 — Frontend `zapatillas-tienda` (clientes) — ya generado
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
-Igual que el backend, este frontend también viene listo (`zapatillas-tienda.zip`), ya compilado y verificado. Descomprime, `npm install`, copia `.env.example` a `.env` y completa con los datos del Contexto Cognito externo. `npm run dev` → queda en `http://localhost:5173`.
+public class Zapatilla {
 
-Pantalla: botón de login (Amplify) y, ya logueado, el catálogo en tarjetas pidiendo `GET /api/zapatillas`.
+    private Long id;
 
-### 0.3 — Frontend `zapatillas-admin` (personal) — ya generado
+    @NotBlank(message = "El modelo es obligatorio")
+    private String modelo;
 
-Mismo caso: `zapatillas-admin.zip` ya generado y verificado. Descomprime, `npm install`, `.env` con los datos del Contexto Cognito interno. `npm run dev` → queda en `http://localhost:5174`.
+    @NotBlank(message = "La marca es obligatoria")
+    private String marca;
 
-Pantalla: botón de login y, ya logueado, un formulario (modelo, marca, talla, stock) que hace `POST /api/zapatillas`.
+    @NotNull(message = "La talla es obligatoria")
+    @Min(value = 30, message = "La talla debe ser un número de calzado válido")
+    private Integer talla;
+
+    @NotNull(message = "El stock es obligatorio")
+    @Min(value = 0, message = "El stock no puede ser negativo")
+    private Integer stock;
+
+    public Zapatilla() {
+    }
+
+    public Zapatilla(Long id, String modelo, String marca, Integer talla, Integer stock) {
+        this.id = id;
+        this.modelo = modelo;
+        this.marca = marca;
+        this.talla = talla;
+        this.stock = stock;
+    }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getModelo() { return modelo; }
+    public void setModelo(String modelo) { this.modelo = modelo; }
+    public String getMarca() { return marca; }
+    public void setMarca(String marca) { this.marca = marca; }
+    public Integer getTalla() { return talla; }
+    public void setTalla(Integer talla) { this.talla = talla; }
+    public Integer getStock() { return stock; }
+    public void setStock(Integer stock) { this.stock = stock; }
+}
+```
+
+**Paso 3 — El servicio (guarda el inventario en memoria)**
+
+Crea `src/main/java/cl/duoc/backendshoesapp/service/ZapatillaNoEncontradaException.java`:
+
+```java
+package cl.duoc.backendshoesapp.service;
+
+public class ZapatillaNoEncontradaException extends RuntimeException {
+    public ZapatillaNoEncontradaException(Long id) {
+        super("No existe una zapatilla con id " + id);
+    }
+}
+```
+
+Crea `src/main/java/cl/duoc/backendshoesapp/service/ZapatillaService.java`:
+
+```java
+package cl.duoc.backendshoesapp.service;
+
+import cl.duoc.backendshoesapp.model.Zapatilla;
+import jakarta.annotation.PostConstruct;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+@Service
+public class ZapatillaService {
+
+    private final Map<Long, Zapatilla> inventario = new ConcurrentHashMap<>();
+    private final AtomicLong secuenciaId = new AtomicLong(0);
+
+    @PostConstruct
+    public void cargarDatosDeEjemplo() {
+        crear(new Zapatilla(null, "Air Runner", "Nortex", 42, 15));
+        crear(new Zapatilla(null, "Urban Glide", "Vantix", 39, 8));
+        crear(new Zapatilla(null, "Trail Storm", "Nortex", 44, 3));
+    }
+
+    public List<Zapatilla> listarTodas() {
+        return inventario.values().stream()
+                .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
+                .collect(Collectors.toList());
+    }
+
+    public Zapatilla buscarPorId(Long id) {
+        Zapatilla zapatilla = inventario.get(id);
+        if (zapatilla == null) {
+            throw new ZapatillaNoEncontradaException(id);
+        }
+        return zapatilla;
+    }
+
+    public Zapatilla crear(Zapatilla nueva) {
+        long id = secuenciaId.incrementAndGet();
+        nueva.setId(id);
+        inventario.put(id, nueva);
+        return nueva;
+    }
+
+    public Zapatilla actualizar(Long id, Zapatilla datos) {
+        Zapatilla existente = buscarPorId(id);
+        existente.setModelo(datos.getModelo());
+        existente.setMarca(datos.getMarca());
+        existente.setTalla(datos.getTalla());
+        existente.setStock(datos.getStock());
+        return existente;
+    }
+
+    public void eliminar(Long id) {
+        if (!inventario.containsKey(id)) {
+            throw new ZapatillaNoEncontradaException(id);
+        }
+        inventario.remove(id);
+    }
+}
+```
+
+**Paso 4 — El controller (los endpoints REST)**
+
+Crea `src/main/java/cl/duoc/backendshoesapp/controller/ZapatillaController.java`:
+
+```java
+package cl.duoc.backendshoesapp.controller;
+
+import cl.duoc.backendshoesapp.model.Zapatilla;
+import cl.duoc.backendshoesapp.service.ZapatillaService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/zapatillas")
+public class ZapatillaController {
+
+    private final ZapatillaService zapatillaService;
+
+    public ZapatillaController(ZapatillaService zapatillaService) {
+        this.zapatillaService = zapatillaService;
+    }
+
+    @GetMapping
+    public List<Zapatilla> listar() {
+        return zapatillaService.listarTodas();
+    }
+
+    @GetMapping("/{id}")
+    public Zapatilla obtener(@PathVariable Long id) {
+        return zapatillaService.buscarPorId(id);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Zapatilla crear(@Valid @RequestBody Zapatilla nueva) {
+        return zapatillaService.crear(nueva);
+    }
+
+    @PutMapping("/{id}")
+    public Zapatilla actualizar(@PathVariable Long id, @Valid @RequestBody Zapatilla datos) {
+        return zapatillaService.actualizar(id, datos);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminar(@PathVariable Long id) {
+        zapatillaService.eliminar(id);
+    }
+}
+```
+
+**Por qué `GET` y `POST` viven en el mismo controller:** ambos comparten el mismo path base (`/api/zapatillas`), solo cambia el método HTTP y qué hace cada uno — igual como se explica más adelante en el Contexto API Manager.
+
+Crea `src/main/java/cl/duoc/backendshoesapp/controller/GlobalExceptionHandler.java` (para que los errores devuelvan JSON en vez de la página blanca de error de Spring):
+
+```java
+package cl.duoc.backendshoesapp.controller;
+
+import cl.duoc.backendshoesapp.service.ZapatillaNoEncontradaException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ZapatillaNoEncontradaException.class)
+    public ResponseEntity<Map<String, Object>> manejarNoEncontrada(ZapatillaNoEncontradaException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(cuerpoError(ex.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> manejarValidacion(MethodArgumentNotValidException ex) {
+        String detalle = ex.getBindingResult().getFieldErrors().stream()
+                .map(err -> err.getField() + ": " + err.getDefaultMessage())
+                .collect(Collectors.joining(", "));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(cuerpoError(detalle));
+    }
+
+    private Map<String, Object> cuerpoError(String mensaje) {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("timestamp", Instant.now().toString());
+        cuerpo.put("mensaje", mensaje);
+        return cuerpo;
+    }
+}
+```
+
+**Paso 5 — Habilitar CORS (para que los dos React puedan llamarlo directo mientras desarrollas)**
+
+Crea `src/main/java/cl/duoc/backendshoesapp/config/CorsConfig.java`:
+
+```java
+package cl.duoc.backendshoesapp.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOrigins("http://localhost:5173", "http://localhost:5174")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*");
+    }
+}
+```
+
+**Paso 6 — Correr y probar**
+
+```bash
+mvn spring-boot:run
+```
+
+Prueba en Postman o con `curl` (recomendado: Postman, funciona igual en cualquier sistema operativo):
+
+```bash
+curl http://localhost:8080/api/zapatillas
+
+curl -X POST http://localhost:8080/api/zapatillas \
+  -H "Content-Type: application/json" \
+  -d '{"modelo":"Sky Jump","marca":"Nortex","talla":41,"stock":10}'
+```
+
+**Si usas `curl` en Windows:** en Git Bash el comando de arriba funciona tal cual. En PowerShell o cmd, el `\` de continuación de línea no funciona — escríbelo en una sola línea:
+
+```
+curl -X POST http://localhost:8080/api/zapatillas -H "Content-Type: application/json" -d "{\"modelo\":\"Sky Jump\",\"marca\":\"Nortex\",\"talla\":41,\"stock\":10}"
+```
+
+**Checkpoint:** `GET` te devuelve las 3 zapatillas de ejemplo. Un `POST` agrega una nueva y aparece en el siguiente `GET`. Todavía **sin seguridad** — eso se agrega del lado de API Gateway en el Contexto de integración final; este backend no necesita saber nada de Cognito, confía en que si la petición llegó, ya fue autorizada por el Gateway.
+
+### 0.2 — Frontend `zapatillas-tienda` (clientes)
+
+**Paso 1 — Crear el proyecto**
+
+```bash
+npm create vite@latest zapatillas-tienda -- --template react-ts
+cd zapatillas-tienda
+npm install
+npm install aws-amplify
+```
+
+**Paso 2 — Fijar el puerto**
+
+Edita `vite.config.ts`:
+
+```ts
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+  },
+});
+```
+
+**Paso 3 — Variables de entorno**
+
+Crea `.env.example` en la raíz:
+
+```
+VITE_COGNITO_USER_POOL_ID=
+VITE_COGNITO_CLIENT_ID=
+VITE_COGNITO_DOMAIN=
+VITE_REDIRECT_SIGN_IN=http://localhost:5173/
+VITE_REDIRECT_SIGN_OUT=http://localhost:5173/
+VITE_API_URL=
+```
+
+Cópialo a `.env` (agrega `.env` a tu `.gitignore`) — lo completas en el Contexto Cognito externo, más adelante.
+
+**Paso 4 — Leer y validar la configuración**
+
+Crea `src/config.ts`:
+
+```ts
+export const config = {
+  userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID as string | undefined,
+  userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined,
+  domain: import.meta.env.VITE_COGNITO_DOMAIN as string | undefined,
+  redirectSignIn: import.meta.env.VITE_REDIRECT_SIGN_IN as string | undefined,
+  redirectSignOut: import.meta.env.VITE_REDIRECT_SIGN_OUT as string | undefined,
+  apiUrl: import.meta.env.VITE_API_URL as string | undefined,
+};
+
+export function configFaltante(): string[] {
+  return Object.entries(config)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+}
+
+export const isConfigOk = configFaltante().length === 0;
+```
+
+**Paso 5 — Configurar Amplify**
+
+Reemplaza `src/main.tsx`:
+
+```tsx
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { Amplify } from "aws-amplify";
+import "./index.css";
+import App from "./App.tsx";
+import { config, isConfigOk } from "./config";
+
+if (isConfigOk) {
+  Amplify.configure({
+    Auth: {
+      Cognito: {
+        userPoolId: config.userPoolId!,
+        userPoolClientId: config.userPoolClientId!,
+        loginWith: {
+          oauth: {
+            domain: config.domain!,
+            scopes: ["openid", "email", "profile", "zapatillas-api/read"],
+            redirectSignIn: [config.redirectSignIn!],
+            redirectSignOut: [config.redirectSignOut!],
+            responseType: "code",
+          },
+        },
+      },
+    },
+  });
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+```
+
+**Paso 6 — El wrapper para llamadas autenticadas**
+
+Crea `src/api.ts`:
+
+```ts
+import { fetchAuthSession } from "aws-amplify/auth";
+import { config } from "./config";
+
+export interface Zapatilla {
+  id: number;
+  modelo: string;
+  marca: string;
+  talla: number;
+  stock: number;
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.accessToken?.toString();
+
+  return fetch(`${config.apiUrl}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
+export async function obtenerCatalogo(): Promise<Zapatilla[]> {
+  const res = await apiFetch("/api/zapatillas");
+  if (!res.ok) {
+    throw new Error(`El backend respondió ${res.status} al pedir el catálogo`);
+  }
+  return res.json();
+}
+```
+
+**Paso 7 — La pantalla**
+
+Reemplaza `src/App.tsx`:
+
+```tsx
+import { useEffect, useState } from "react";
+import { signInWithRedirect, signOut, fetchAuthSession } from "aws-amplify/auth";
+import { obtenerCatalogo, type Zapatilla } from "./api";
+import { isConfigOk, configFaltante } from "./config";
+import "./App.css";
+
+function App() {
+  const [logueado, setLogueado] = useState(false);
+  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [catalogo, setCatalogo] = useState<Zapatilla[]>([]);
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isConfigOk) {
+      setCargandoSesion(false);
+      return;
+    }
+    fetchAuthSession()
+      .then((session) => setLogueado(!!session.tokens))
+      .catch(() => setLogueado(false))
+      .finally(() => setCargandoSesion(false));
+  }, []);
+
+  useEffect(() => {
+    if (!logueado) return;
+    setCargandoCatalogo(true);
+    setError(null);
+    obtenerCatalogo()
+      .then(setCatalogo)
+      .catch((err) => setError(err.message))
+      .finally(() => setCargandoCatalogo(false));
+  }, [logueado]);
+
+  if (!isConfigOk) {
+    return (
+      <div className="aviso-config">
+        <h1>Falta configuración</h1>
+        <p>
+          Completa estos valores en <code>.env</code> (Contexto Cognito externo):
+        </p>
+        <ul>
+          {configFaltante().map((clave) => (
+            <li key={clave}>
+              <code>{clave}</code>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>Zapatillas — Tienda</h1>
+        {!cargandoSesion &&
+          (logueado ? (
+            <button onClick={() => signOut()}>Cerrar sesión</button>
+          ) : (
+            <button onClick={() => signInWithRedirect()}>Iniciar sesión</button>
+          ))}
+      </header>
+
+      {cargandoSesion && <p>Verificando sesión…</p>}
+      {!cargandoSesion && !logueado && <p className="mensaje">Inicia sesión como cliente para ver el catálogo.</p>}
+
+      {logueado && (
+        <main>
+          {cargandoCatalogo && <p>Cargando catálogo…</p>}
+          {error && <p className="error">Error al cargar el catálogo: {error}</p>}
+          {!cargandoCatalogo && !error && catalogo.length === 0 && (
+            <p className="mensaje">No hay zapatillas en el inventario todavía.</p>
+          )}
+          <div className="grid-catalogo">
+            {catalogo.map((z) => (
+              <article key={z.id} className="tarjeta">
+                <h2>{z.modelo}</h2>
+                <p className="marca">{z.marca}</p>
+                <p>Talla: {z.talla}</p>
+                <p className={z.stock > 0 ? "stock-ok" : "stock-agotado"}>
+                  {z.stock > 0 ? `${z.stock} en stock` : "Agotado"}
+                </p>
+              </article>
+            ))}
+          </div>
+        </main>
+      )}
+    </div>
+  );
+}
+
+export default App;
+```
+
+Reemplaza `src/App.css`:
+
+```css
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+.app-header h1 {
+  font-size: 22px;
+  margin: 0;
+}
+button {
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover {
+  background: #f2f2f2;
+}
+.mensaje {
+  color: #555;
+}
+.error {
+  color: #b3261e;
+}
+.aviso-config {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 24px;
+  border: 1px solid #d9b400;
+  background: #fffbe6;
+  border-radius: 8px;
+}
+.grid-catalogo {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.tarjeta {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+}
+.tarjeta h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.marca {
+  color: #666;
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.stock-ok {
+  color: #1f6f2b;
+  font-weight: 600;
+}
+.stock-agotado {
+  color: #b3261e;
+  font-weight: 600;
+}
+```
+
+**Checkpoint:** con el `.env` sin completar, `npm run dev` te muestra el aviso de configuración faltante (comportamiento esperado, no un error).
+
+### 0.3 — Frontend `zapatillas-admin` (personal)
+
+Mismo procedimiento que 0.2, con estas diferencias:
+
+1. `npm create vite@latest zapatillas-admin -- --template react-ts`, luego `npm install` y `npm install aws-amplify`.
+2. `vite.config.ts` con `port: 5174` (no 5173 — así puedes correr los dos frontends a la vez).
+3. `.env.example`:
+   ```
+   VITE_COGNITO_USER_POOL_ID=
+   VITE_COGNITO_CLIENT_ID=
+   VITE_COGNITO_DOMAIN=
+   VITE_REDIRECT_SIGN_IN=http://localhost:5174/
+   VITE_REDIRECT_SIGN_OUT=http://localhost:5174/
+   VITE_API_URL=
+   ```
+4. `src/config.ts` — idéntico al de `zapatillas-tienda`.
+5. `src/main.tsx` — idéntico, salvo el scope: usa `'zapatillas-api/write'` en vez de `'zapatillas-api/read'`.
+6. `src/api.ts`:
+
+```ts
+import { fetchAuthSession } from "aws-amplify/auth";
+import { config } from "./config";
+
+export interface Zapatilla {
+  id: number;
+  modelo: string;
+  marca: string;
+  talla: number;
+  stock: number;
+}
+
+export interface NuevaZapatilla {
+  modelo: string;
+  marca: string;
+  talla: number;
+  stock: number;
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.accessToken?.toString();
+
+  return fetch(`${config.apiUrl}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
+
+export async function agregarZapatilla(datos: NuevaZapatilla): Promise<Zapatilla> {
+  const res = await apiFetch("/api/zapatillas", {
+    method: "POST",
+    body: JSON.stringify(datos),
+  });
+  if (!res.ok) {
+    const cuerpo = await res.json().catch(() => null);
+    throw new Error(cuerpo?.mensaje ?? `El backend respondió ${res.status} al agregar la zapatilla`);
+  }
+  return res.json();
+}
+```
+
+7. `src/App.tsx` — un formulario en vez de un catálogo:
+
+```tsx
+import { useEffect, useState, type FormEvent } from "react";
+import { signInWithRedirect, signOut, fetchAuthSession } from "aws-amplify/auth";
+import { agregarZapatilla, type Zapatilla } from "./api";
+import { isConfigOk, configFaltante } from "./config";
+import "./App.css";
+
+const FORM_INICIAL = { modelo: "", marca: "", talla: "", stock: "" };
+
+function App() {
+  const [logueado, setLogueado] = useState(false);
+  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [form, setForm] = useState(FORM_INICIAL);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agregadas, setAgregadas] = useState<Zapatilla[]>([]);
+
+  useEffect(() => {
+    if (!isConfigOk) {
+      setCargandoSesion(false);
+      return;
+    }
+    fetchAuthSession()
+      .then((session) => setLogueado(!!session.tokens))
+      .catch(() => setLogueado(false))
+      .finally(() => setCargandoSesion(false));
+  }, []);
+
+  if (!isConfigOk) {
+    return (
+      <div className="aviso-config">
+        <h1>Falta configuración</h1>
+        <p>
+          Completa estos valores en <code>.env</code> (Contexto Cognito interno):
+        </p>
+        <ul>
+          {configFaltante().map((clave) => (
+            <li key={clave}>
+              <code>{clave}</code>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setEnviando(true);
+    try {
+      const nueva = await agregarZapatilla({
+        modelo: form.modelo,
+        marca: form.marca,
+        talla: Number(form.talla),
+        stock: Number(form.stock),
+      });
+      setAgregadas((prev) => [nueva, ...prev]);
+      setForm(FORM_INICIAL);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>Zapatillas — Panel de Personal</h1>
+        {!cargandoSesion &&
+          (logueado ? (
+            <button onClick={() => signOut()}>Cerrar sesión</button>
+          ) : (
+            <button onClick={() => signInWithRedirect()}>Iniciar sesión</button>
+          ))}
+      </header>
+
+      {cargandoSesion && <p>Verificando sesión…</p>}
+      {!cargandoSesion && !logueado && <p className="mensaje">Inicia sesión como personal para agregar stock.</p>}
+
+      {logueado && (
+        <main>
+          <form onSubmit={onSubmit} className="formulario">
+            <label>
+              Modelo
+              <input required value={form.modelo} onChange={(e) => setForm({ ...form, modelo: e.target.value })} />
+            </label>
+            <label>
+              Marca
+              <input required value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} />
+            </label>
+            <label>
+              Talla
+              <input
+                required
+                type="number"
+                min={30}
+                value={form.talla}
+                onChange={(e) => setForm({ ...form, talla: e.target.value })}
+              />
+            </label>
+            <label>
+              Stock
+              <input
+                required
+                type="number"
+                min={0}
+                value={form.stock}
+                onChange={(e) => setForm({ ...form, stock: e.target.value })}
+              />
+            </label>
+            <button type="submit" disabled={enviando}>
+              {enviando ? "Agregando…" : "Agregar al inventario"}
+            </button>
+          </form>
+
+          {error && <p className="error">No se pudo agregar: {error}</p>}
+
+          {agregadas.length > 0 && (
+            <section>
+              <h2>Agregado en esta sesión</h2>
+              <ul className="lista-agregadas">
+                {agregadas.map((z) => (
+                  <li key={z.id}>
+                    #{z.id} — {z.modelo} ({z.marca}) · talla {z.talla} · stock {z.stock}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </main>
+      )}
+    </div>
+  );
+}
+
+export default App;
+```
+
+8. `src/App.css`:
+
+```css
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+.app-header h1 {
+  font-size: 22px;
+  margin: 0;
+}
+button {
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover {
+  background: #f2f2f2;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.mensaje {
+  color: #555;
+}
+.error {
+  color: #b3261e;
+}
+.aviso-config {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 24px;
+  border: 1px solid #d9b400;
+  background: #fffbe6;
+  border-radius: 8px;
+}
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 320px;
+}
+.formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #444;
+}
+.formulario input {
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+.formulario button {
+  margin-top: 6px;
+}
+.lista-agregadas {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.lista-agregadas li {
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+```
+
+**Checkpoint:** cada app corre en su puerto (5173 tienda, 5174 admin), ambas muestran el aviso de configuración faltante hasta que completes su `.env` en el Contexto Cognito correspondiente.
 
 **Por qué dos proyectos React y no uno:** AWS Amplify configura **un** Cognito User Pool por app (`Amplify.configure()` recibe una sola configuración). Como vamos a tener dos identidades distintas, separar los proyectos evita pelear con Amplify — y de paso refleja cómo se separa esto en un sistema real (portal de administración vs. tienda pública casi nunca son la misma aplicación).
 
@@ -140,14 +1013,14 @@ Ngrok te entrega una URL pública, algo como `https://a1b2-c3d4.ngrok-free.app`.
 
 ### 2.2 — La pantalla "Set up resources for your application"
 
-Al terminar, Cognito te lleva a esta pantalla — la misma que te generó dudas:
+Al terminar, Cognito te lleva a esta pantalla:
 
 - **"Check out your sign-in page"** → botón **View login page**: abre la pantalla de login real (Managed Login) para que la veas funcionando ahora mismo, con un usuario de prueba.
 - **"Build authentication components for your application" → Quick setup guide** → te pregunta **"What's the development platform for your web application?"**, con opciones **Golang / Java / NodeJS / Python**.
 
-**Esto confundía porque parece pedir el lenguaje de tu frontend, pero no es así:** esas 4 opciones son lenguajes de **backend** — esta sección te genera código de ejemplo para validar tokens de Cognito **desde un servidor**, no desde React. No la necesitamos: nuestro backend Spring Boot ya sabe validar tokens de Cognito de forma nativa con Spring Security (lo vas a configurar en el módulo de integración con el backend), y nuestro frontend usa Amplify, no el código de ejemplo de esta pantalla.
+**Esto puede parecer que pide el lenguaje de tu frontend, pero no es así:** esas 4 opciones son lenguajes de **backend** — esta sección genera código de ejemplo para validar tokens de Cognito **desde un servidor**, no desde React. No la necesitas: el backend Spring Boot valida tokens de Cognito de forma nativa con Spring Security, y el frontend usa Amplify, no el código de ejemplo de esta pantalla.
 
-**Qué hacer con esta pantalla:** puedes ignorarla y salir (no hay que completarla ni elegir ninguna opción), o si tienes curiosidad, elige **Java** — igual coincide con Spring Boot y te muestra cómo se ve un validador de JWT hecho a mano, útil como referencia, pero no lo vamos a seguir al pie de la letra.
+**Qué hacer con esta pantalla:** puedes ignorarla y salir (no hay que completarla ni elegir ninguna opción), o si tienes curiosidad, elige **Java** — igual coincide con Spring Boot y muestra cómo se ve un validador de JWT hecho a mano, útil como referencia, pero no se sigue al pie de la letra en esta actividad.
 
 ### 2.3 — Dónde sacar el User Pool ID y el App Client ID
 
@@ -168,7 +1041,7 @@ Al terminar, Cognito te lleva a esta pantalla — la misma que te generó dudas:
 4. Guarda. El scope completo que vas a usar más adelante es `zapatillas-api/read`.
 5. Vuelve a **"App clients"** → `zapatillas-tienda-app` → pestaña de login (**"Login pages"**) → **Edit** → en **Custom scopes**, marca `zapatillas-api/read` (y deja `openid`, `email`, `profile` marcados) → **Save changes**.
 
-**Checkpoint del contexto externo:** tienes User Pool ID, App Client ID, dominio, y el scope `zapatillas-api/read` habilitado.
+**Checkpoint del contexto externo:** tienes User Pool ID, App Client ID, dominio, y el scope `zapatillas-api/read` habilitado. Completa el `.env` de `zapatillas-tienda` con estos datos.
 
 ---
 
@@ -183,7 +1056,7 @@ Al terminar, Cognito te lleva a esta pantalla — la misma que te generó dudas:
 Repite exactamente el procedimiento del Contexto anterior (2.1), con estos valores distintos:
 
 - **Name your application:** `zapatillas-admin-app`.
-- **Return URL:** `http://localhost:5174/` (usa un puerto distinto al de `zapatillas-tienda` para poder correr ambos frontends a la vez — configúralo en el `vite.config.ts` de `zapatillas-admin` con `server: { port: 5174 }`).
+- **Return URL:** `http://localhost:5174/`.
 
 ### 3.2 — La misma pantalla "Set up resources"
 
@@ -199,78 +1072,7 @@ Mismo procedimiento que 2.3 y 2.4, para este pool. Ej. dominio `zapatillas-admin
 2. **Custom scope → Name:** `write` · **Description:** "Permite agregar stock al inventario".
 3. Habilita `zapatillas-api/write` en `zapatillas-admin-app` (mismo paso que 2.5.5).
 
-**Checkpoint del contexto interno:** tienes User Pool ID, App Client ID, dominio, y el scope `zapatillas-api/write` habilitado — todo en un pool **separado** del de clientes.
-
----
-
-## Contexto Amplify — conectar cada React a su pool
-
-**Qué estamos haciendo y por qué:** cada app React se configura con `Amplify.configure()` apuntando **solo** a su propio pool. Por eso separamos los proyectos desde el Contexto 0 — Amplify no está pensado para manejar dos identidades independientes en la misma app.
-
-### 4.1 — `zapatillas-tienda` → pool externo
-
-```bash
-cd zapatillas-tienda
-npm install aws-amplify
-```
-
-`.env` en la raíz:
-
-```
-VITE_COGNITO_USER_POOL_ID=<User Pool ID de 2.3>
-VITE_COGNITO_CLIENT_ID=<App Client ID de 2.3>
-VITE_COGNITO_DOMAIN=zapatillas-tienda-2026.auth.us-east-1.amazoncognito.com
-VITE_REDIRECT_SIGN_IN=http://localhost:5173/
-VITE_REDIRECT_SIGN_OUT=http://localhost:5173/
-VITE_API_URL=<Invoke URL de tu API Gateway>
-```
-
-`src/main.tsx`, antes de renderizar `<App />`:
-
-```tsx
-import { Amplify } from "aws-amplify";
-
-Amplify.configure({
-  Auth: {
-    Cognito: {
-      userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID,
-      userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
-      loginWith: {
-        oauth: {
-          domain: import.meta.env.VITE_COGNITO_DOMAIN,
-          scopes: ["openid", "email", "profile", "zapatillas-api/read"],
-          redirectSignIn: [import.meta.env.VITE_REDIRECT_SIGN_IN],
-          redirectSignOut: [import.meta.env.VITE_REDIRECT_SIGN_OUT],
-          responseType: "code",
-        },
-      },
-    },
-  },
-});
-```
-
-`src/api.ts` — envuelve tus llamadas para que lleven el token:
-
-```ts
-import { fetchAuthSession } from "aws-amplify/auth";
-
-export async function apiFetch(path: string, options: RequestInit = {}) {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.accessToken?.toString();
-  return fetch(`${import.meta.env.VITE_API_URL}${path}`, {
-    ...options,
-    headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-}
-```
-
-Usa `signInWithRedirect()` / `signOut()` (de `aws-amplify/auth`) para los botones de login/logout, igual que en la guía 1.3.2.
-
-### 4.2 — `zapatillas-admin` → pool interno
-
-Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, dominio `zapatillas-admin-...`), puerto `5174`, y el scope `zapatillas-api/write` en vez de `read`.
-
-**Checkpoint:** cada app, por separado, puede loguear contra su propio pool y mostrar el token en consola (`fetchAuthSession()`).
+**Checkpoint del contexto interno:** tienes User Pool ID, App Client ID, dominio, y el scope `zapatillas-api/write` habilitado — todo en un pool **separado** del de clientes. Completa el `.env` de `zapatillas-admin` con estos datos.
 
 ---
 
@@ -278,7 +1080,7 @@ Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, 
 
 **Qué estamos haciendo y por qué:** hasta acá, API Gateway deja pasar cualquier llamada. Un Authorizer es el guardia que revisa, antes de dejar pasar la petición, que venga con un token JWT válido del pool correcto — y opcionalmente, con el scope correcto.
 
-### 5.1 — Crear los dos Authorizers
+### 4.1 — Crear los dos Authorizers
 
 1. Tu API (`api-zapatillas`) → **"Authorization"** → **"Manage authorizers"** → **"Create"**.
 2. **Authorizer 1 — externo:**
@@ -290,14 +1092,14 @@ Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, 
 
 **De dónde sale el Issuer URL (confunde mucho):** tu User Pool → "Overview" → campo **"OpenID Connect configuration URL"**, con forma `https://cognito-idp.<region>.amazonaws.com/<User-Pool-ID>/.well-known/openid-configuration`. El Issuer URL es esa misma URL **sin** el tramo final `/.well-known/openid-configuration`.
 
-### 5.2 — Adjuntar cada Authorizer a su ruta
+### 4.2 — Adjuntar cada Authorizer a su ruta
 
 1. Panel izquierdo → **"Routes"** → selecciona `GET /api/zapatillas` → **"Attach authorizer"** → elige `cognito-jwt-externo`. En **"Authorization scopes"**, agrega `zapatillas-api/read`.
 2. Selecciona `POST /api/zapatillas` → **"Attach authorizer"** → elige `cognito-jwt-interno`. En **"Authorization scopes"**, agrega `zapatillas-api/write`.
 
 **Checkpoint:** en la vista de "Routes", cada ruta muestra su Authorizer — ya no dice "None".
 
-### 5.3 — Prueba de punta a punta
+### 4.3 — Prueba de punta a punta
 
 1. Corre `zapatillas-tienda` (`npm run dev`, puerto 5173) → Login con Amplify → confirma que el token trae `zapatillas-api/read` (pégalo en jwt.io) → la app lista el catálogo llamando a `apiFetch('/api/zapatillas')`.
 2. Corre `zapatillas-admin` (puerto 5174) → Login con Amplify → confirma el scope `zapatillas-api/write` → agrega un par nuevo desde el formulario.
@@ -311,18 +1113,22 @@ Mismo procedimiento, con los datos del Contexto 3 (User Pool ID, App Client ID, 
 
 ### Troubleshooting
 
-| Síntoma                                               | Causa probable                                                                                                                                |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `401` siempre, aunque el token se ve válido en jwt.io | Issuer o Audience del Authorizer no coinciden exactamente con el pool/App Client correcto — revisa que no mezclaste el externo con el interno |
-| El cliente puede hacer `POST`                         | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo                                                        |
-| `403` con token y scope aparentemente correctos       | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client                                 |
-| API Gateway no llega al backend (502/504)             | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo                                       |
+| Síntoma                                               | Causa probable                                                                                                                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `401` siempre, aunque el token se ve válido en jwt.io | Issuer o Audience del Authorizer no coinciden exactamente con el pool/App Client correcto — revisa que no mezclaste el externo con el interno                                   |
+| El cliente puede hacer `POST`                         | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo                                                                                          |
+| `403` con token y scope aparentemente correctos       | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client                                                                   |
+| API Gateway no llega al backend (502/504)             | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo                                                                         |
+| `mvn: command not found` / `mvn` no reconocido        | Instala Maven (`brew install maven` en Mac, `winget install Apache.Maven` en Windows) o abre el proyecto en un IDE que lo traiga integrado (IntelliJ, VS Code + extensión Java) |
 
 ---
 
 ## Cierre
 
 Terminaste con: dos identidades separadas (Cognito), un solo punto de entrada (API Gateway), un backend compartido (Spring Boot) que no sabe ni le importa por cuál puerta entró la petición — solo confía en que, si llegó, ya fue autorizada. Ese es exactamente el patrón de **defense in depth** visto en la clase de Arquitecturas Seguras.
+
+**Pregunta de activación:** ¿por qué el backend Spring Boot no necesita saber nada de Cognito para funcionar?
+**Respuesta:** porque la responsabilidad de autenticar y autorizar queda completamente en API Gateway (con los Authorizers). El backend solo confía en que, si la petición llegó hasta él, ya pasó ese control — es el mismo principio de separación de responsabilidades que se vio al conectar el API Manager con la identidad en clases anteriores.
 
 ## Enlaces oficiales
 
