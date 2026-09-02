@@ -1016,7 +1016,7 @@ Ngrok te entrega una URL pública, algo como `https://a1b2-c3d4.ngrok-free.app`.
 Al terminar, Cognito te lleva a esta pantalla:
 
 - **"Check out your sign-in page"** → botón **View login page**: abre la pantalla de login real (Managed Login) para que la veas funcionando ahora mismo, con un usuario de prueba.
-- **"Build authentication components for your application" → Quick setup guide** → te pregunta **"What's the development platform for your web application?"**, con opciones **Golang / Java / NodeJS / Python**.
+- **"Build authentication components for your application" → Quick setup guide** → aqui amazon te proporciona codigo de ejemplo que puedes seguir o puedes seguir con este tutorial.
 
 ### 2.3 — Dónde sacar el User Pool ID y el App Client ID
 
