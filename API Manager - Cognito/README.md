@@ -1093,3 +1093,44 @@ En resumen: vas a crear 2 Authorizers (uno por pool) y luego vas a decirle a cad
    - **Name:** `cognito-jwt-externo`.
    - **Identity source:** deja el valor por defecto (`$request.header.Authorization` — le dice al guardia dónde viene el carnet: en el header `Authorization` de la petición).
    - **Issuer URL:** ve al User Pool **externo** → "Overview" → copia el campo **"OpenID Connect configuration URL"**. Tiene esta forma:
+
+### 4.2 — Adjuntar cada Authorizer a su ruta
+
+**Qué estamos haciendo:** hasta aquí los guardias existen, pero todavía no están parados en ninguna puerta. Este paso es literalmente "poner al guardia en la puerta correcta": le decimos a la ruta `GET /api/zapatillas` que use el guardia externo, y a la ruta `POST /api/zapatillas` que use el guardia interno — aunque comparten el mismo path, cada una queda vigilada por un guardia distinto porque el método (GET/POST) es diferente.
+
+**Paso a paso:**
+
+1. Panel izquierdo de tu API → **"Routes"** → selecciona `GET /api/zapatillas`.
+2. **"Attach authorizer"** → elige `cognito-jwt-externo`.
+3. En **"Authorization scopes"**, agrega `zapatillas-api/read` (el permiso que este guardia debe exigir en el carnet) → guarda.
+4. Selecciona ahora `POST /api/zapatillas` → **"Attach authorizer"** → elige `cognito-jwt-interno`.
+5. En **"Authorization scopes"**, agrega `zapatillas-api/write` → guarda.
+
+**Checkpoint:** en la vista de "Routes", cada ruta muestra su Authorizer al lado (ya no dice "None").
+
+### 4.3 — Prueba de punta a punta
+
+**Qué estamos haciendo:** ahora que los dos guardias están en su puerta, probamos que el sistema completo funcione como se espera: cada frontend hace login contra su propio pool, recibe un carnet (token) con el permiso correspondiente, y el Gateway lo deja pasar solo si corresponde.
+
+**Paso a paso:**
+
+1. Corre `zapatillas-tienda` (`npm run dev`, puerto 5173) → haz login con Amplify → la app lista el catálogo llamando a `apiFetch('/api/zapatillas')` (un `GET`).
+2. (Opcional, para verlo con tus propios ojos) copia el token que usa la sesión y pégalo en [jwt.io](https://jwt.io) — en el payload deberías ver `zapatillas-api/read` dentro de `scope`.
+3. Corre `zapatillas-admin` (puerto 5174) → login con Amplify → agrega un par nuevo desde el formulario (un `POST`). Si quieres, revisa igual su token en jwt.io: debería traer `zapatillas-api/write`.
+4. Vuelve a `zapatillas-tienda` y refresca — el par que agregó el admin debería aparecer en el catálogo del cliente (ambos frontends hablan con el mismo backend, solo que con carnets distintos).
+
+**Resultado esperado:**
+
+- Con token válido y con el scope que la ruta exige → `200 OK`.
+- Sin token → `401`.
+- Con token válido pero del pool equivocado (ej. un cliente con carnet externo intentando `POST`) → `401`/`403`, porque ese guardia no reconoce ese carnet ni ese permiso.
+
+### Troubleshooting
+
+| Síntoma                                               | Causa probable                                                                                                                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `401` siempre, aunque el token se ve válido en jwt.io | Issuer o Audience del Authorizer no coinciden exactamente con el pool/App Client correcto — revisa que no mezclaste el externo con el interno                                   |
+| El cliente puede hacer `POST`                         | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo                                                                                          |
+| `403` con token y scope aparentemente correctos       | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client                                                                   |
+| API Gateway no llega al backend (502/504)             | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo                                                                         |
+| `mvn: command not found` / `mvn` no reconocido        | Instala Maven (`brew install maven` en Mac, `winget install Apache.Maven` en Windows) o abre el proyecto en un IDE que lo traiga integrado (IntelliJ, VS Code + extensión Java) |
