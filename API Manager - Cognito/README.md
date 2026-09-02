@@ -1070,64 +1070,26 @@ Mismo procedimiento que 2.3 y 2.4, para este pool. Ej. dominio `zapatillas-admin
 
 ## Contexto de integración final — Authorizers y protección del backend
 
-**Qué estamos haciendo y por qué:** hasta acá, API Gateway deja pasar cualquier llamada. Un Authorizer es el guardia que revisa, antes de dejar pasar la petición, que venga con un token JWT válido del pool correcto — y opcionalmente, con el scope correcto.
+**Qué estamos haciendo y por qué, en simple:** hasta este punto, tu API Gateway deja pasar **cualquier** llamada — con o sin login. Ahora le vamos a poner un guardia en la puerta de cada ruta.
+
+Piénsalo como un edificio con dos alas (clientes y personal) y una sola recepción (API Gateway) que las controla a ambas:
+
+- Un **Authorizer** es ese guardia. Antes de dejar pasar una petición hacia tu backend, revisa el "carnet" (el token JWT que Amplify obtuvo cuando la persona hizo login).
+- Necesitas **dos guardias distintos** porque tienes dos oficinas que emiten carnets distintos (el pool externo y el pool interno). Un guardia solo reconoce los carnets de su propia oficina.
+- Cada guardia revisa dos cosas del carnet:
+  1. **Quién lo emitió** (el **Issuer**) — que sea justo el pool correcto, no cualquier pool de Cognito.
+  2. **Para qué app fue emitido** (el **Audience**) — que sea justo tu App Client (`zapatillas-tienda-app` o `zapatillas-admin-app`), no otra app cualquiera que use el mismo pool.
+- Además, en cada ruta le decimos al guardia qué **permiso (scope)** exigir dentro del carnet: `zapatillas-api/read` para mirar el catálogo, `zapatillas-api/write` para agregar zapatillas. Así, aunque alguien tenga un carnet válido del pool externo, no le va a alcanzar el permiso para hacer `POST`.
+
+En resumen: vas a crear 2 Authorizers (uno por pool) y luego vas a decirle a cada ruta (`GET` y `POST`) cuál de los dos debe revisar el carnet, y qué permiso exigir.
 
 ### 4.1 — Crear los dos Authorizers
 
-1. Tu API (`api-zapatillas`) → **"Authorization"** → **"Manage authorizers"** → **"Create"**.
-2. **Authorizer 1 — externo:**
-   - Tipo: **JWT**. Nombre: `cognito-jwt-externo`.
-   - **Identity source:** deja el valor por defecto (header `Authorization`).
-   - **Issuer URL:** `https://cognito-idp.<region>.amazonaws.com/<User-Pool-ID-externo>`.
-   - **Audience:** App Client ID de `zapatillas-tienda-app` (Contexto 2.3).
-3. **Authorizer 2 — interno:** mismo procedimiento, con **Issuer URL** y **Audience** del pool interno (Contexto 3.3). Nombre: `cognito-jwt-interno`.
+**Paso a paso:**
 
-**De dónde sale el Issuer URL (confunde mucho):** tu User Pool → "Overview" → campo **"OpenID Connect configuration URL"**, con forma `https://cognito-idp.<region>.amazonaws.com/<User-Pool-ID>/.well-known/openid-configuration`. El Issuer URL es esa misma URL **sin** el tramo final `/.well-known/openid-configuration`.
-
-### 4.2 — Adjuntar cada Authorizer a su ruta
-
-1. Panel izquierdo → **"Routes"** → selecciona `GET /api/zapatillas` → **"Attach authorizer"** → elige `cognito-jwt-externo`. En **"Authorization scopes"**, agrega `zapatillas-api/read`.
-2. Selecciona `POST /api/zapatillas` → **"Attach authorizer"** → elige `cognito-jwt-interno`. En **"Authorization scopes"**, agrega `zapatillas-api/write`.
-
-**Checkpoint:** en la vista de "Routes", cada ruta muestra su Authorizer — ya no dice "None".
-
-### 4.3 — Prueba de punta a punta
-
-1. Corre `zapatillas-tienda` (`npm run dev`, puerto 5173) → Login con Amplify → confirma que el token trae `zapatillas-api/read` (pégalo en jwt.io) → la app lista el catálogo llamando a `apiFetch('/api/zapatillas')`.
-2. Corre `zapatillas-admin` (puerto 5174) → Login con Amplify → confirma el scope `zapatillas-api/write` → agrega un par nuevo desde el formulario.
-3. Vuelve a `zapatillas-tienda` y refresca — el par agregado por el admin debería aparecer en el catálogo del cliente (ambos hablan con el mismo backend).
-
-**Resultado esperado:**
-
-- Con token válido y scope correcto → `200 OK`.
-- Sin token → `401`.
-- Con token del pool equivocado (ej. token de cliente intentando `POST`) → `401`/`403`.
-
-### Troubleshooting
-
-| Síntoma                                               | Causa probable                                                                                                                                                                  |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `401` siempre, aunque el token se ve válido en jwt.io | Issuer o Audience del Authorizer no coinciden exactamente con el pool/App Client correcto — revisa que no mezclaste el externo con el interno                                   |
-| El cliente puede hacer `POST`                         | Revisa que `POST /api/zapatillas` tenga adjuntado `cognito-jwt-interno`, no el externo                                                                                          |
-| `403` con token y scope aparentemente correctos       | El scope pedido en Amplify (`.env`/`main.tsx`) no coincide letra por letra con el habilitado en el App Client                                                                   |
-| API Gateway no llega al backend (502/504)             | La URL de ngrok cambió (reinicia y actualiza la integración) o el backend Spring Boot no está corriendo                                                                         |
-| `mvn: command not found` / `mvn` no reconocido        | Instala Maven (`brew install maven` en Mac, `winget install Apache.Maven` en Windows) o abre el proyecto en un IDE que lo traiga integrado (IntelliJ, VS Code + extensión Java) |
-
----
-
-## Cierre
-
-Terminaste con: dos identidades separadas (Cognito), un solo punto de entrada (API Gateway), un backend compartido (Spring Boot) que no sabe ni le importa por cuál puerta entró la petición — solo confía en que, si llegó, ya fue autorizada. Ese es exactamente el patrón de **defense in depth** visto en la clase de Arquitecturas Seguras.
-
-**Pregunta de activación:** ¿por qué el backend Spring Boot no necesita saber nada de Cognito para funcionar?
-**Respuesta:** porque la responsabilidad de autenticar y autorizar queda completamente en API Gateway (con los Authorizers). El backend solo confía en que, si la petición llegó hasta él, ya pasó ese control — es el mismo principio de separación de responsabilidades que se vio al conectar el API Manager con la identidad en clases anteriores.
-
-## Enlaces oficiales
-
-- Getting started with user pools: https://docs.aws.amazon.com/cognito/latest/developerguide/getting-started-user-pools.html
-- Create a new application (flujo actual): https://docs.aws.amazon.com/cognito/latest/developerguide/getting-started-user-pools-application.html
-- Resource servers y scopes personalizados: https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-define-resource-servers.html
-- HTTP API — integraciones HTTP: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-http.html
-- HTTP API JWT Authorizer: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html
-- Amplify — Use existing Cognito resources (React): https://docs.amplify.aws/react/build-a-backend/auth/use-existing-cognito-resources/
-- ngrok — Getting started: https://ngrok.com/docs/getting-started/
+1. Tu API (`api-zapatillas`) → pestaña **"Authorization"** → **"Manage authorizers"** → **"Create"**.
+2. **Authorizer 1 — externo** (el guardia del pool de clientes):
+   - **Authorizer type:** `JWT`.
+   - **Name:** `cognito-jwt-externo`.
+   - **Identity source:** deja el valor por defecto (`$request.header.Authorization` — le dice al guardia dónde viene el carnet: en el header `Authorization` de la petición).
+   - **Issuer URL:** ve al User Pool **externo** → "Overview" → copia el campo **"OpenID Connect configuration URL"**. Tiene esta forma:
